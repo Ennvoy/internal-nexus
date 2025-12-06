@@ -64,6 +64,23 @@ export const Dashboard: React.FC = () => {
 
   const recentFeatures = features.slice(0, 2);
 
+  const getVideoThumbnail = (url?: string) => {
+    if (!url) return null;
+    try {
+      if (url.includes('youtube.com/watch')) {
+        const id = new URL(url).searchParams.get('v');
+        return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+      }
+      if (url.includes('youtu.be/')) {
+        const id = url.split('youtu.be/')[1]?.split(/[?&]/)[0];
+        return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -118,10 +135,18 @@ export const Dashboard: React.FC = () => {
                 onClick={() => navigate('/features', { state: { featureId: feature.id } })}
               >
                 <div className="p-6 flex flex-col md:flex-row gap-6">
-                  <div className="w-full md:w-48 h-32 bg-slate-900 rounded-lg flex items-center justify-center border border-white/5 shrink-0 group-hover:border-indigo-500/30 transition-colors">
-                    <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center">
-                      <Star className="w-6 h-6 text-indigo-500" />
-                    </div>
+                  <div className="w-full md:w-48 h-32 bg-slate-900 rounded-lg flex items-center justify-center border border-white/5 shrink-0 group-hover:border-indigo-500/30 transition-colors overflow-hidden">
+                    {getVideoThumbnail(feature.videoUrl) ? (
+                      <img
+                        src={getVideoThumbnail(feature.videoUrl) as string}
+                        alt={feature.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center">
+                        <Star className="w-6 h-6 text-indigo-500" />
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
