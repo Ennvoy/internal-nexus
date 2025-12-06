@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      base: "/internal-nexus/",
+      // Render 靜態站直接掛根目錄，改為 "/" 避免靜態資源 404
+      base: "/",
       server: {
         port: 3000,
         host: '0.0.0.0',
