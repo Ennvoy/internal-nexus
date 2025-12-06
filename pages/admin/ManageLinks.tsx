@@ -5,7 +5,7 @@ import { Modal } from '../../components/Modal';
 import { useConfig } from '../../services/configService';
 import { OptionManager } from '../../components/OptionManager';
 import { linkApi } from '../../services/api';
-import { Search, Plus, Edit2, Trash2, CheckCircle, XCircle, ExternalLink, Globe, Settings2 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, CheckCircle, XCircle, ExternalLink, Globe, Settings2, GripVertical } from 'lucide-react';
 
 export const ManageLinks: React.FC = () => {
   const [links, setLinks] = useState<PartnerLink[]>([]);
@@ -87,6 +87,32 @@ export const ManageLinks: React.FC = () => {
     }
   };
 
+  // Drag & Drop reordering
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const onDragStart = (id: string) => setDraggingId(id);
+  const onDragOver = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
+    e.preventDefault();
+    if (!draggingId || draggingId === id) return;
+    setLinks(prev => {
+      const currentIdx = prev.findIndex(l => l.id === draggingId);
+      const targetIdx = prev.findIndex(l => l.id === id);
+      if (currentIdx === -1 || targetIdx === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(currentIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+  };
+  const onDrop = async () => {
+    if (!draggingId) return;
+    setDraggingId(null);
+    try {
+      await linkApi.reorder(links.map(l => l.id));
+    } catch (err) {
+      // ignore
+    }
+  };
+
   const toggleRole = (role: UserRole) => {
     if (!editingLink) return;
     const currentRoles = editingLink.visibleTo || [];
@@ -134,6 +160,7 @@ export const ManageLinks: React.FC = () => {
             <table className="w-full text-left text-sm text-slate-400">
               <thead className="bg-slate-900/80 text-xs uppercase font-medium text-slate-500">
                 <tr>
+                  <th className="px-4 py-4 w-10">拖曳</th>
                   <th className="px-6 py-4">標題 / 描述</th>
                   <th className="px-6 py-4">分類</th>
                   <th className="px-6 py-4">目標連結</th>
@@ -144,7 +171,17 @@ export const ManageLinks: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredLinks.map(link => (
-                  <tr key={link.id} className="hover:bg-white/5 transition-colors">
+                  <tr
+                    key={link.id}
+                    className="hover:bg-white/5 transition-colors"
+                    draggable
+                    onDragStart={() => onDragStart(link.id)}
+                    onDragOver={(e) => onDragOver(e, link.id)}
+                    onDrop={onDrop}
+                  >
+                    <td className="px-4 py-4 cursor-grab text-slate-500">
+                      <GripVertical className="w-4 h-4" />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="font-medium text-white">{link.title}</div>
                       <div className="text-xs text-slate-500 truncate max-w-[200px]">{link.description}</div>

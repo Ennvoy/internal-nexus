@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/authService';
 import { Card } from '../components/Card';
 import { Modal } from '../components/Modal';
@@ -9,6 +9,7 @@ import { featureApi, linkApi } from '../services/api';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [features, setFeatures] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,7 +111,12 @@ export const Dashboard: React.FC = () => {
 
           <div className="grid grid-cols-1 gap-4">
             {recentFeatures.map(feature => (
-              <Card key={feature.id} hoverEffect className="p-0 group">
+              <Card
+                key={feature.id}
+                hoverEffect
+                className="p-0 group cursor-pointer"
+                onClick={() => navigate('/features', { state: { featureId: feature.id } })}
+              >
                 <div className="p-6 flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 h-32 bg-slate-900 rounded-lg flex items-center justify-center border border-white/5 shrink-0 group-hover:border-indigo-500/30 transition-colors">
                     <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center">

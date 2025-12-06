@@ -45,6 +45,7 @@ const mapFeature = (row) => ({
   videoUrl: row.video_url || '',
   docContent: row.doc_content || '',
   docFile: row.doc_file || undefined,
+  position: row.position || 0,
   updatedAt: row.updated_at ? row.updated_at.toISOString().split('T')[0] : '',
 });
 
@@ -66,6 +67,7 @@ const mapLink = (row) => ({
   category: row.category,
   visibleTo: row.visible_to || [],
   isActive: row.is_active,
+  position: row.position || 0,
   createdAt: row.created_at ? row.created_at.toISOString() : undefined,
 });
 
@@ -83,6 +85,7 @@ async function ensureTables() {
       video_url TEXT,
       doc_content TEXT,
       doc_file JSONB,
+      position INT NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     
@@ -105,110 +108,31 @@ async function ensureTables() {
       category TEXT NOT NULL,
       visible_to TEXT[] DEFAULT '{}',
       is_active BOOLEAN DEFAULT TRUE,
+      position INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     
     CREATE TABLE IF NOT EXISTS feature_categories (
-      value TEXT PRIMARY KEY
+      value TEXT PRIMARY KEY,
+      position INT NOT NULL DEFAULT 0
     );
     
     CREATE TABLE IF NOT EXISTS feature_audiences (
-      value TEXT PRIMARY KEY
+      value TEXT PRIMARY KEY,
+      position INT NOT NULL DEFAULT 0
     );
     
     CREATE TABLE IF NOT EXISTS link_categories (
-      value TEXT PRIMARY KEY
+      value TEXT PRIMARY KEY,
+      position INT NOT NULL DEFAULT 0
     );
   `);
-}
-
-async function seedDefaults() {
-  const defaults = {
-    featureCategories: ['Automation', 'Customer Service', 'Admin Workflow', 'Data Analytics', 'Integration'],
-    featureAudiences: ['Finance', 'Operations', 'Sales', 'IT', 'Partnerships', 'HR'],
-    linkCategories: ['Dashboards', 'Customer Service', 'Admin', 'Data', 'External Portal', 'Assets'],
-  };
-
-  const seedArray = async (table, values) => {
-    const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM ${table}`);
-    if (rows[0].count === 0) {
-      await pool.query(
-        `INSERT INTO ${table} (value) SELECT unnest($1::text[])`,
-        [values]
-      );
-    }
-  };
-
-  await seedArray('feature_categories', defaults.featureCategories);
-  await seedArray('feature_audiences', defaults.featureAudiences);
-  await seedArray('link_categories', defaults.linkCategories);
-
-  // Seed admin user if none exists
-  const { rows: userRows } = await pool.query('SELECT COUNT(*)::int AS count FROM users');
-  if (userRows[0].count === 0) {
-    await pool.query(
-      `INSERT INTO users (id, name, email, role, is_active, avatar_url, password)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [crypto.randomUUID(), 'System Admin', 'admin@company.com', 'ADMIN', true, '', '123456']
-    );
-  }
-
-  // Seed a couple of sample records for features and links
-  const { rows: featureRows } = await pool.query('SELECT COUNT(*)::int AS count FROM features');
-  if (featureRows[0].count === 0) {
-    await pool.query(
-      `INSERT INTO features (id, title, description, category, tags, target_audience, status, video_url, doc_content, updated_at)
-       VALUES
-       ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()),
-       ($10,$11,$12,$13,$14,$15,$16,$17,$18,NOW())`,
-      [
-        crypto.randomUUID(),
-        'Auto Report Generator',
-        'Generate weekly Excel/PDF reports automatically to reduce manual work.',
-        'Automation',
-        ['report', 'automation', 'finance'],
-        ['Finance', 'Operations'],
-        'ONLINE',
-        'https://www.youtube.com/embed/dQw4w9WgXcQ',
-        '## How to use\n1. Open the app\n2. Choose template\n3. Export report',
-        crypto.randomUUID(),
-        'Chatbot for Support',
-        'Provide quick answers for common questions with a LINE chatbot.',
-        'Customer Service',
-        ['chatbot', 'cs', 'line'],
-        ['Sales', 'IT'],
-        'TESTING',
-        '',
-        'Markdown docs go here.',
-      ]
-    );
-  }
-
-  const { rows: linkRows } = await pool.query('SELECT COUNT(*)::int AS count FROM partner_links');
-  if (linkRows[0].count === 0) {
-    await pool.query(
-      `INSERT INTO partner_links (id, title, description, url, category, visible_to, is_active)
-       VALUES
-       ($1,$2,$3,$4,$5,$6,$7),
-       ($8,$9,$10,$11,$12,$13,$14)`,
-      [
-        crypto.randomUUID(),
-        'External Dashboard',
-        'Access the quarterly dashboard.',
-        'https://example.com/dashboard',
-        'Dashboards',
-        ['ADMIN', 'STAFF', 'PARTNER'],
-        true,
-        crypto.randomUUID(),
-        'Legacy Admin Console',
-        'Manage legacy data until migration is done.',
-        'https://example.com/admin',
-        'Admin',
-        ['ADMIN'],
-        true,
-      ]
-    );
-  }
+  // Ensure position column exists for existing tables
+  await pool.query(`ALTER TABLE feature_categories ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE feature_audiences ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE link_categories ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE features ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE partner_links ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0`);
 }
 
 // Routes
@@ -218,56 +142,103 @@ app.get('/health', (req, res) => {
 
 // Features
 app.get('/api/features', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM features ORDER BY updated_at DESC');
+  const { rows } = await pool.query('SELECT * FROM features ORDER BY position DESC, updated_at DESC');
   res.json(rows.map(mapFeature));
 });
 
+const normalizeFeaturePayload = (body) => {
+  const tags = Array.isArray(body.tags) ? body.tags : [];
+  const targetAudience = Array.isArray(body.targetAudience) ? body.targetAudience : [];
+  const docFile = body.docFile && typeof body.docFile === 'object' ? body.docFile : null;
+  return {
+    title: body.title,
+    description: body.description,
+    category: body.category,
+    tags,
+    targetAudience,
+    status: body.status || 'TESTING',
+    videoUrl: body.videoUrl || '',
+    docContent: body.docContent || '',
+    docFile,
+    updatedAt: body.updatedAt || new Date(),
+  };
+};
+
 app.post('/api/features', async (req, res) => {
-  const {
-    title,
-    description,
-    category,
-    tags = [],
-    targetAudience = [],
-    status = 'TESTING',
-    videoUrl = '',
-    docContent = '',
-    docFile = null,
-  } = req.body;
-
-  const id = req.body.id || crypto.randomUUID();
-  const updatedAt = req.body.updatedAt || new Date();
-
-  const { rows } = await pool.query(
-    `INSERT INTO features (id, title, description, category, tags, target_audience, status, video_url, doc_content, doc_file, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [id, title, description, category, tags, targetAudience, status, videoUrl, docContent, docFile, updatedAt]
-  );
-  res.status(201).json(mapFeature(rows[0]));
+  try {
+    const id = req.body.id || crypto.randomUUID();
+    const payload = normalizeFeaturePayload(req.body);
+    const { rows: posRows } = await pool.query('SELECT COALESCE(MAX(position),0)+1 AS next_pos FROM features');
+    const position = posRows[0].next_pos || 1;
+    const { rows } = await pool.query(
+      `INSERT INTO features (id, title, description, category, tags, target_audience, status, video_url, doc_content, doc_file, position, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [
+        id,
+        payload.title,
+        payload.description,
+        payload.category,
+        payload.tags,
+        payload.targetAudience,
+        payload.status,
+        payload.videoUrl,
+        payload.docContent,
+        payload.docFile,
+        position,
+        payload.updatedAt,
+      ]
+    );
+    res.status(201).json(mapFeature(rows[0]));
+  } catch (err) {
+    console.error('Failed to create feature', err);
+    res.status(400).json({ error: 'Failed to create feature' });
+  }
 });
 
 app.put('/api/features/:id', async (req, res) => {
-  const {
-    title,
-    description,
-    category,
-    tags = [],
-    targetAudience = [],
-    status = 'TESTING',
-    videoUrl = '',
-    docContent = '',
-    docFile = null,
-  } = req.body;
-  const updatedAt = req.body.updatedAt || new Date();
+  try {
+    const payload = normalizeFeaturePayload(req.body);
+    const { rows } = await pool.query(
+      `UPDATE features
+       SET title=$1, description=$2, category=$3, tags=$4, target_audience=$5, status=$6, video_url=$7, doc_content=$8, doc_file=$9, updated_at=$10
+       WHERE id=$11 RETURNING *`,
+      [
+        payload.title,
+        payload.description,
+        payload.category,
+        payload.tags,
+        payload.targetAudience,
+        payload.status,
+        payload.videoUrl,
+        payload.docContent,
+        payload.docFile,
+        payload.updatedAt,
+        req.params.id,
+      ]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Feature not found' });
+    res.json(mapFeature(rows[0]));
+  } catch (err) {
+    console.error('Failed to update feature', err);
+    res.status(400).json({ error: 'Failed to update feature' });
+  }
+});
 
-  const { rows } = await pool.query(
-    `UPDATE features
-     SET title=$1, description=$2, category=$3, tags=$4, target_audience=$5, status=$6, video_url=$7, doc_content=$8, doc_file=$9, updated_at=$10
-     WHERE id=$11 RETURNING *`,
-    [title, description, category, tags, targetAudience, status, videoUrl, docContent, docFile, updatedAt, req.params.id]
+app.post('/api/features/reorder', async (req, res) => {
+  const ids = req.body.ids || [];
+  if (!Array.isArray(ids) || ids.length === 0) return res.json({ ok: true });
+  const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS c FROM features');
+  const total = countRows[0].c || ids.length;
+  await pool.query(
+    `WITH ord AS (
+       SELECT * FROM unnest($1::text[]) WITH ORDINALITY t(id, ord)
+     )
+     UPDATE features f
+     SET position = (SELECT (SELECT COUNT(*) FROM ord) - ord + 1 FROM ord WHERE ord.id = f.id)
+     WHERE f.id IN (SELECT id FROM ord)`,
+    [ids]
   );
-  if (rows.length === 0) return res.status(404).json({ error: 'Feature not found' });
-  res.json(mapFeature(rows[0]));
+  res.json({ ok: true });
 });
 
 app.delete('/api/features/:id', async (req, res) => {
@@ -282,23 +253,32 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.post('/api/users', async (req, res) => {
-  const {
-    name,
-    email,
-    role = 'STAFF',
-    isActive = true,
-    avatarUrl = '',
-    password = '123456',
-  } = req.body;
-  const id = req.body.id || crypto.randomUUID();
-  const createdAt = req.body.createdAt || new Date();
+  try {
+    const {
+      name,
+      email,
+      role = 'STAFF',
+      isActive = true,
+      avatarUrl = '',
+      password = '123456',
+    } = req.body;
+    const id = req.body.id || crypto.randomUUID();
+    const createdAt = req.body.createdAt || new Date();
 
-  const { rows } = await pool.query(
-    `INSERT INTO users (id, name, email, role, is_active, created_at, avatar_url, password)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [id, name, email, role, isActive, createdAt, avatarUrl, password]
-  );
-  res.status(201).json(mapUser(rows[0]));
+    const { rows } = await pool.query(
+      `INSERT INTO users (id, name, email, role, is_active, created_at, avatar_url, password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [id, name, email, role, isActive, createdAt, avatarUrl, password]
+    );
+    res.status(201).json(mapUser(rows[0]));
+  } catch (err) {
+    if (err.code === '23505') {
+      // Unique constraint violation (e.g., email already exists)
+      return res.status(409).json({ error: 'Email 已存在，請使用其他帳號' });
+    }
+    console.error('Failed to create user', err);
+    res.status(400).json({ error: 'Failed to create user' });
+  }
 });
 
 app.put('/api/users/:id', async (req, res) => {
@@ -343,7 +323,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Partner Links
 app.get('/api/links', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM partner_links ORDER BY created_at DESC');
+  const { rows } = await pool.query('SELECT * FROM partner_links ORDER BY position DESC, created_at DESC');
   res.json(rows.map(mapLink));
 });
 
@@ -357,11 +337,13 @@ app.post('/api/links', async (req, res) => {
     isActive = true,
   } = req.body;
   const id = req.body.id || crypto.randomUUID();
+  const { rows: posRows } = await pool.query('SELECT COALESCE(MAX(position),0)+1 AS next_pos FROM partner_links');
+  const position = posRows[0].next_pos || 1;
 
   const { rows } = await pool.query(
-    `INSERT INTO partner_links (id, title, description, url, category, visible_to, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [id, title, description, url, category, visibleTo, isActive]
+    `INSERT INTO partner_links (id, title, description, url, category, visible_to, is_active, position)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [id, title, description, url, category, visibleTo, isActive, position]
   );
   res.status(201).json(mapLink(rows[0]));
 });
@@ -383,9 +365,24 @@ app.delete('/api/links/:id', async (req, res) => {
   res.status(204).end();
 });
 
+app.post('/api/links/reorder', async (req, res) => {
+  const ids = req.body.ids || [];
+  if (!Array.isArray(ids) || ids.length === 0) return res.json({ ok: true });
+  await pool.query(
+    `WITH ord AS (
+       SELECT * FROM unnest($1::text[]) WITH ORDINALITY t(id, ord)
+     )
+     UPDATE partner_links l
+     SET position = (SELECT (SELECT COUNT(*) FROM ord) - ord + 1 FROM ord WHERE ord.id = l.id)
+     WHERE l.id IN (SELECT id FROM ord)`,
+    [ids]
+  );
+  res.json({ ok: true });
+});
+
 // Config (categories / audiences)
 app.get('/api/config/feature-categories', async (req, res) => {
-  const { rows } = await pool.query('SELECT value FROM feature_categories ORDER BY value');
+  const { rows } = await pool.query('SELECT value FROM feature_categories ORDER BY position, value');
   res.json(rows.map((r) => r.value));
 });
 
@@ -394,7 +391,11 @@ app.put('/api/config/feature-categories', async (req, res) => {
   await pool.query('DELETE FROM feature_categories');
   if (items.length) {
     await pool.query(
-      `INSERT INTO feature_categories (value) SELECT unnest($1::text[])`,
+      `WITH ord AS (
+         SELECT * FROM unnest($1::text[]) WITH ORDINALITY t(value, position)
+       )
+       INSERT INTO feature_categories (value, position)
+       SELECT value, position-1 FROM ord`,
       [items]
     );
   }
@@ -402,7 +403,7 @@ app.put('/api/config/feature-categories', async (req, res) => {
 });
 
 app.get('/api/config/feature-audiences', async (req, res) => {
-  const { rows } = await pool.query('SELECT value FROM feature_audiences ORDER BY value');
+  const { rows } = await pool.query('SELECT value FROM feature_audiences ORDER BY position, value');
   res.json(rows.map((r) => r.value));
 });
 
@@ -411,7 +412,11 @@ app.put('/api/config/feature-audiences', async (req, res) => {
   await pool.query('DELETE FROM feature_audiences');
   if (items.length) {
     await pool.query(
-      `INSERT INTO feature_audiences (value) SELECT unnest($1::text[])`,
+      `WITH ord AS (
+         SELECT * FROM unnest($1::text[]) WITH ORDINALITY t(value, position)
+       )
+       INSERT INTO feature_audiences (value, position)
+       SELECT value, position-1 FROM ord`,
       [items]
     );
   }
@@ -419,7 +424,7 @@ app.put('/api/config/feature-audiences', async (req, res) => {
 });
 
 app.get('/api/config/link-categories', async (req, res) => {
-  const { rows } = await pool.query('SELECT value FROM link_categories ORDER BY value');
+  const { rows } = await pool.query('SELECT value FROM link_categories ORDER BY position, value');
   res.json(rows.map((r) => r.value));
 });
 
@@ -428,7 +433,11 @@ app.put('/api/config/link-categories', async (req, res) => {
   await pool.query('DELETE FROM link_categories');
   if (items.length) {
     await pool.query(
-      `INSERT INTO link_categories (value) SELECT unnest($1::text[])`,
+      `WITH ord AS (
+         SELECT * FROM unnest($1::text[]) WITH ORDINALITY t(value, position)
+       )
+       INSERT INTO link_categories (value, position)
+       SELECT value, position-1 FROM ord`,
       [items]
     );
   }
@@ -437,7 +446,6 @@ app.put('/api/config/link-categories', async (req, res) => {
 
 async function start() {
   await ensureTables();
-  await seedDefaults();
   app.listen(PORT, () => {
     console.log(`API server listening on http://localhost:${PORT}`);
   });

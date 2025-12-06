@@ -3,6 +3,8 @@ import { Card } from '../components/Card';
 import { Modal } from '../components/Modal';
 import { Feature } from '../types';
 import { featureApi } from '../services/api';
+import { useConfig } from '../services/configService';
+import { useLocation } from 'react-router-dom';
 import { Search, Filter, PlayCircle, BookOpen, Tag, Download } from 'lucide-react';
 
 export const FeatureLibrary: React.FC = () => {
@@ -12,6 +14,8 @@ export const FeatureLibrary: React.FC = () => {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { featureCategories } = useConfig();
+  const location = useLocation();
 
   const loadFeatures = async () => {
     setLoading(true);
@@ -30,7 +34,16 @@ export const FeatureLibrary: React.FC = () => {
     loadFeatures();
   }, []);
 
-  const categories = ['ALL', ...Array.from(new Set(features.map(f => f.category)))];
+  // Open detail modal if navigated with state featureId
+  useEffect(() => {
+    const state = location.state as any;
+    const targetId = state?.featureId;
+    if (!targetId || !features.length) return;
+    const target = features.find(f => f.id === targetId);
+    if (target) setSelectedFeature(target);
+  }, [location.state, features]);
+
+  const categories = ['ALL', ...(featureCategories?.length ? featureCategories : Array.from(new Set(features.map(f => f.category))))];
 
   const filteredFeatures = features.filter(f => {
     const matchesSearch = f.title.toLowerCase().includes(searchTerm.toLowerCase()) || f.description.toLowerCase().includes(searchTerm.toLowerCase());

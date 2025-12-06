@@ -58,6 +58,7 @@ export const featureApi = {
     return normalizeFeature(res);
   },
   remove: (id: string) => request(`/api/features/${id}`, { method: 'DELETE' }),
+  reorder: (ids: string[]) => request('/api/features/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
 };
 
 export const userApi = {
@@ -79,6 +80,7 @@ export const linkApi = {
   create: (payload: Partial<PartnerLink>) => request<PartnerLink>('/api/links', { method: 'POST', body: JSON.stringify(payload) }),
   update: (id: string, payload: Partial<PartnerLink>) => request<PartnerLink>(`/api/links/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   remove: (id: string) => request(`/api/links/${id}`, { method: 'DELETE' }),
+  reorder: (ids: string[]) => request('/api/links/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
 };
 
 export const configApi = {

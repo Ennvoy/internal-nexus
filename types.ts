@@ -29,6 +29,7 @@ export interface Feature {
     dataUrl: string;
     mime?: string;
   };
+  position?: number;
   updatedAt: string;
 }
 
@@ -40,6 +41,7 @@ export interface PartnerLink {
   category: string;
   visibleTo: UserRole[]; // Who can see this
   isActive: boolean;
+  position?: number;
 }
 
 export interface AuthState {

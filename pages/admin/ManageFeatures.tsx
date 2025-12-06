@@ -5,7 +5,7 @@ import { Modal } from '../../components/Modal';
 import { useConfig } from '../../services/configService';
 import { OptionManager } from '../../components/OptionManager';
 import { featureApi } from '../../services/api';
-import { Search, Plus, Edit2, Trash2, CheckCircle, PlayCircle, FileText, Settings2 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, CheckCircle, PlayCircle, FileText, Settings2, GripVertical } from 'lucide-react';
 
 export const ManageFeatures: React.FC = () => {
   const [features, setFeatures] = useState<Feature[]>([]);
@@ -25,7 +25,8 @@ export const ManageFeatures: React.FC = () => {
     setError(null);
     try {
       const data = await featureApi.list();
-      setFeatures(data);
+      const sorted = [...data].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      setFeatures(sorted);
     } catch (e: any) {
       setError(e?.message || '無法載入功能列表');
     } finally {
@@ -88,10 +89,10 @@ export const ManageFeatures: React.FC = () => {
     try {
       if (editingFeature.id) {
         const updated = await featureApi.update(editingFeature.id, featureToSave);
-        setFeatures(prev => prev.map(f => f.id === updated.id ? updated : f));
+        setFeatures(prev => [updated, ...prev.filter(f => f.id !== updated.id)]);
       } else {
         const created = await featureApi.create(featureToSave);
-        setFeatures(prev => [...prev, created]);
+        setFeatures(prev => [created, ...prev]);
       }
       setIsModalOpen(false);
     } catch (err: any) {
@@ -127,6 +128,32 @@ export const ManageFeatures: React.FC = () => {
   const handleRemoveFile = () => {
     if (!editingFeature) return;
     setEditingFeature(prev => ({ ...prev!, docFile: undefined }));
+  };
+
+  // Drag & Drop reordering
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const onDragStart = (id: string) => setDraggingId(id);
+  const onDragOver = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
+    e.preventDefault();
+    if (!draggingId || draggingId === id) return;
+    setFeatures(prev => {
+      const currentIdx = prev.findIndex(f => f.id === draggingId);
+      const targetIdx = prev.findIndex(f => f.id === id);
+      if (currentIdx === -1 || targetIdx === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(currentIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+  };
+  const onDrop = async () => {
+    if (!draggingId) return;
+    setDraggingId(null);
+    try {
+      await featureApi.reorder(features.map(f => f.id));
+    } catch (err) {
+      // ignore
+    }
   };
 
   return (
@@ -166,6 +193,7 @@ export const ManageFeatures: React.FC = () => {
             <table className="w-full text-left text-sm text-slate-400">
               <thead className="bg-slate-900/80 text-xs uppercase font-medium text-slate-500">
                 <tr>
+                  <th className="px-4 py-4 w-10">拖曳</th>
                   <th className="px-6 py-4">功能名稱</th>
                   <th className="px-6 py-4">分類 / 標籤</th>
                   <th className="px-6 py-4">適用對象</th>
@@ -176,7 +204,17 @@ export const ManageFeatures: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredFeatures.map(feature => (
-                  <tr key={feature.id} className="hover:bg-white/5 transition-colors">
+                  <tr
+                    key={feature.id}
+                    className="hover:bg-white/5 transition-colors"
+                    draggable
+                    onDragStart={() => onDragStart(feature.id)}
+                    onDragOver={(e) => onDragOver(e, feature.id)}
+                    onDrop={onDrop}
+                  >
+                    <td className="px-4 py-4 cursor-grab text-slate-500">
+                      <GripVertical className="w-4 h-4" />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="font-medium text-white">{feature.title}</div>
                       <div className="text-xs text-slate-500 truncate max-w-[200px]">{feature.description}</div>
