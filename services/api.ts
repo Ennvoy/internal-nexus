@@ -5,11 +5,28 @@ import { Feature, User, PartnerLink } from '../types';
 // 2) if running on localhost:3000 (vite dev), default to http://localhost:4000
 // 3) otherwise fall back to same-origin
 const envApi = (import.meta as any)?.env?.VITE_API_URL;
-const isLocal3000 = typeof window !== 'undefined' && window.location.origin.includes('localhost:3000');
-const computedBase = envApi && envApi.trim()
-  ? envApi.trim()
-  : (isLocal3000 ? 'http://localhost:4000' : (typeof window !== 'undefined' ? window.location.origin : ''));
-const API_BASE = computedBase.endsWith('/') ? computedBase.slice(0, -1) : computedBase;
+
+// 判斷是不是在本機開發（Vite dev）
+const isLocalDev =
+  typeof window !== "undefined" &&
+  window.location.origin.includes("localhost:3000");
+
+// 如果是本機 → 優先用 env，沒有就用 http://localhost:4000
+// 如果是正式環境 → 優先用 env，沒有就用你的 Render 後端網址
+const computedBase = isLocalDev
+  ? (envApi && envApi.trim()) || "http://localhost:4000"
+  : (envApi && envApi.trim()) || "https://internal-nexus.onrender.com";
+
+const API_BASE = computedBase.endsWith("/")
+  ? computedBase.slice(0, -1)
+  : computedBase;
+
+// （可選）方便除錯：在 console 看 API_BASE
+if (typeof window !== "undefined") {
+  (window as any).__NEXUS_API_BASE__ = API_BASE;
+  console.log("[Nexus] API_BASE =", API_BASE);
+}
+
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
